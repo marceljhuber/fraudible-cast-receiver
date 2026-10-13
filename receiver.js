@@ -1,0 +1,213 @@
+/*
+ * Fraudible Cast receiver.
+ * The phone sends book details, the cover and read-along text over the custom namespace (the TV never
+ * talks to the homelab server for these, because an HTTPS page cannot fetch plain-HTTP LAN data).
+ * Audio itself is played by the Cast framework from the stream URL the phone loads.
+ */
+const NS = 'urn:x-cast:dev.marcelhuber.fraudible';
+const $ = (id) => document.getElementById(id);
+
+const state = {
+  book: null,          // {title, author, narrator, duration, chapters:[{title,start,end}], tracks:[{path,start}], tint:[a,b]}
+  cover: null,         // data URL
+  sentences: [],       // [{text, start, heading}]
+  mode: 'now',         // 'now' | 'read'
+  playing: false,
+  rate: 1,
+  posFromPhone: null,  // {t, at} fallback when the media element can't be mapped
+  chunks: {},
+};
+
+// ---- formatting -------------------------------------------------------------------------------
+const hm = (s) => {
+  s = Math.max(0, Math.round(s / 60));
+  const h = Math.floor(s / 60), m = s % 60;
+  return h ? `${h}h ${m}m` : `${m}m`;
+};
+const clock = (s) => {
+  s = Math.max(0, Math.floor(s));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  return (h ? `${h}:${String(m).padStart(2, '0')}` : `${m}`) + `:${String(sec).padStart(2, '0')}`;
+};
+
+// ---- position ---------------------------------------------------------------------------------
+let player = null;
+const media = $('media');
+
+function trackOffset() {
+  if (!state.book || !player) return null;
+  const info = player.getMediaInformation && player.getMediaInformation();
+  const url = (info && (info.contentUrl || info.contentId)) || media.currentSrc || '';
+  const path = url.split('?')[0].replace(/^https?:\/\/[^/]+/, '');
+  const t = state.book.tracks.find((tr) => tr.path === path);
+  return t ? t.start : null;
+}
+
+function position() {
+  const off = trackOffset();
+  if (off !== null && !isNaN(media.currentTime)) return off + media.currentTime;
+  if (state.posFromPhone) {
+    const p = state.posFromPhone;
+    return p.t + (state.playing ? ((Date.now() - p.at) / 1000) * state.rate : 0);
+  }
+  return 0;
+}
+
+// ---- rendering --------------------------------------------------------------------------------
+function show(id) {
+  for (const s of document.querySelectorAll('.screen')) s.classList.toggle('visible', s.id === id);
+}
+
+function applyBook() {
+  const b = state.book;
+  if (!b) return;
+  const root = document.documentElement.style;
+  if (b.tint) { root.setProperty('--tint', b.tint[0]); root.setProperty('--tint2', b.tint[1] || b.tint[0]); }
+  $('title').textContent = b.title;
+  $('byline').textContent = [b.author && `by ${b.author}`, b.narrator && `narrated by ${b.narrator}`].filter(Boolean).join('  ·  ');
+  $('read-title').textContent = b.title;
+}
+
+function applyCover() {
+  if (!state.cover) return;
+  $('cover').src = state.cover;
+  $('read-cover').src = state.cover;
+  $('backdrop-art').style.backgroundImage = `url("${state.cover}")`;
+}
+
+let lastSentence = -1;
+function sentenceIndexAt(t) {
+  const s = state.sentences;
+  let lo = 0, hi = s.length - 1, ans = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (s[mid].start !== null && s[mid].start <= t) { ans = mid; lo = mid + 1; }
+    else if (s[mid].start === null) { lo = mid + 1; }
+    else hi = mid - 1;
+  }
+  return ans;
+}
+
+function renderRead(t) {
+  const idx = sentenceIndexAt(t);
+  if (idx === lastSentence) return;
+  lastSentence = idx;
+  const box = $('read-text');
+  box.innerHTML = '';
+  if (idx < 0) { box.innerHTML = '<div class="line">…</div>'; return; }
+  for (let i = Math.max(0, idx - 2); i <= Math.min(state.sentences.length - 1, idx + 3); i++) {
+    const s = state.sentences[i];
+    const el = document.createElement('div');
+    el.className = 'line' + (i < idx ? ' past' : i > idx ? ' next' : ' current') + (s.heading ? ' heading' : '');
+    el.textContent = s.text;
+    box.appendChild(el);
+  }
+}
+
+function tick() {
+  const b = state.book;
+  if (!b) { show('idle'); return; }
+  const t = position();
+  document.body.classList.toggle('paused', !state.playing);
+  $('state-text').textContent = state.playing ? 'Now playing' : 'Paused';
+  $('read-state').textContent = state.playing ? '' : 'Paused';
+
+  const ch = b.chapters || [];
+  let ci = ch.findIndex((c) => t >= c.start && t < c.end);
+  if (ci < 0) ci = ch.length ? ch.length - 1 : -1;
+  const c = ci >= 0 ? ch[ci] : { title: '', start: 0, end: b.duration };
+  const cLen = Math.max(1, c.end - c.start), cPos = Math.min(cLen, Math.max(0, t - c.start));
+  $('chapter-label').textContent = ch.length > 1 ? `Chapter ${ci + 1} of ${ch.length}` : 'Progress';
+  $('chapter-title').textContent = c.title || b.title;
+  $('chapter-fill').style.width = `${(cPos / cLen) * 100}%`;
+  $('ch-elapsed').textContent = clock(cPos);
+  $('ch-left').textContent = `-${clock(cLen - cPos)}`;
+  const frac = b.duration ? Math.min(1, t / b.duration) : 0;
+  $('book-fill').style.width = `${frac * 100}%`;
+  $('read-fill').style.width = `${frac * 100}%`;
+  $('book-left').textContent = `${hm(b.duration - t)} left in book  ·  ${Math.round(frac * 100)}%`;
+  $('speed').textContent = state.rate !== 1 ? `${state.rate.toFixed(2).replace(/0$/, '')}×` : '';
+  $('read-chapter').textContent = ch.length > 1 ? `Chapter ${ci + 1} of ${ch.length}  ·  ${c.title}` : '';
+
+  const reading = state.mode === 'read' && state.sentences.length > 0;
+  show(reading ? 'read' : 'now');
+  if (reading) renderRead(t);
+}
+
+// ---- messages from the phone ------------------------------------------------------------------
+function onMessage(msg) {
+  switch (msg.type) {
+    case 'book':
+      state.book = msg.book; state.sentences = []; lastSentence = -1;
+      applyBook();
+      break;
+    case 'mode':
+      state.mode = msg.readAlong ? 'read' : 'now'; lastSentence = -1;
+      break;
+    case 'pos':
+      state.posFromPhone = { t: msg.t, at: Date.now() };
+      if (typeof msg.playing === 'boolean') state.playing = msg.playing;
+      if (msg.rate) state.rate = msg.rate;
+      break;
+    case 'chunk': {
+      const key = `${msg.kind}:${msg.id}`;
+      const c = (state.chunks[key] = state.chunks[key] || { parts: [], got: 0 });
+      if (c.parts[msg.i] === undefined) { c.parts[msg.i] = msg.data; c.got++; }
+      if (c.got === msg.n) {
+        const all = c.parts.join('');
+        delete state.chunks[key];
+        if (msg.kind === 'cover') { state.cover = all; applyCover(); }
+        if (msg.kind === 'read') {
+          state.sentences = JSON.parse(all).map((s) => ({ text: s[0], start: s[1], heading: !!s[2] }));
+          lastSentence = -1;
+        }
+      }
+      break;
+    }
+  }
+  tick();
+}
+
+// ---- Cast framework ---------------------------------------------------------------------------
+function startCast() {
+  const context = cast.framework.CastReceiverContext.getInstance();
+  player = context.getPlayerManager();
+  player.setMediaElement(media);
+  const E = cast.framework.events.EventType;
+  const sync = () => {
+    const ps = player.getPlayerState();
+    state.playing = ps === cast.framework.messages.PlayerState.PLAYING || ps === cast.framework.messages.PlayerState.BUFFERING;
+    state.rate = player.getPlaybackRate ? player.getPlaybackRate() || 1 : 1;
+    tick();
+  };
+  [E.PLAYING, E.PAUSE, E.PLAYER_LOAD_COMPLETE, E.RATE_CHANGE, E.ENDED, E.MEDIA_STATUS].forEach((e) => player.addEventListener(e, sync));
+  context.addCustomMessageListener(NS, (event) => onMessage(event.data));
+  const options = new cast.framework.CastReceiverOptions();
+  options.customNamespaces = { [NS]: cast.framework.system.MessageType.JSON };
+  options.disableIdleTimeout = false;
+  options.maxInactivity = 3600;
+  context.start(options);
+}
+
+// ---- local demo (?demo=1) for designing without a TV -------------------------------------------
+function startDemo() {
+  const start = Date.now() - 754_000;
+  state.playing = true; state.rate = 1.25;
+  state.posFromPhone = { t: 754, at: Date.now() };
+  const words = 'The cat could jump into my arms. It was something I had trained her to do. I could shake a bag of cat treats, and she would jump right up there. I cursed myself for not bringing cat treats out with me. The window on the first-floor apartment slid open. "What in god\'s name is going on out here?" Mrs. Parsons called, sticking her head out the window.'.split(/(?<=[.!?"])\s+/);
+  onMessage({ type: 'book', book: {
+    title: 'Dungeon Crawler Carl', author: 'Matt Dinniman', narrator: 'Jeff Hays', duration: 48660,
+    chapters: [{ title: 'Opening Credits', start: 0, end: 60 }, { title: 'Chapter 1', start: 60, end: 1400 }, { title: 'Chapter 2', start: 1400, end: 2600 }],
+    tracks: [], tint: ['#6b5a12', '#2a1f08'],
+  } });
+  const sentences = words.map((w, i) => [w, 700 + i * 9, 0]);
+  onMessage({ type: 'chunk', kind: 'read', id: 1, i: 0, n: 1, data: JSON.stringify(sentences) });
+  if (location.search.includes('read')) onMessage({ type: 'mode', readAlong: true });
+  const cover = new URLSearchParams(location.search).get('cover');
+  if (cover) { state.cover = cover; applyCover(); }
+  setInterval(() => { state.posFromPhone = { t: (Date.now() - start) / 1000, at: Date.now() }; tick(); }, 250);
+}
+
+if (location.search.includes('demo')) startDemo();
+else if (window.cast && cast.framework) startCast();
+setInterval(tick, 250);

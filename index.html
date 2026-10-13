@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Fraudible</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="receiver.css">
+  <script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+</head>
+<body>
+  <!-- Audio is played by the Cast framework through this element; it stays invisible. -->
+  <audio id="media"></audio>
+
+  <div id="backdrop"><div id="backdrop-art"></div></div>
+
+  <main id="idle" class="screen visible">
+    <div class="brand big"><img src="waves.svg" alt=""><span>fraudible</span></div>
+    <p class="hint">Waiting for your phone…</p>
+  </main>
+
+  <main id="now" class="screen">
+    <div class="art-wrap"><img id="cover" alt=""></div>
+    <section class="info">
+      <div class="eyebrow"><span id="state-dot"></span><span id="state-text">Now playing</span></div>
+      <h1 id="title"></h1>
+      <p id="byline"></p>
+      <div class="chapter">
+        <div id="chapter-label"></div>
+        <div id="chapter-title"></div>
+        <div class="bar"><div id="chapter-fill"></div></div>
+        <div class="times"><span id="ch-elapsed"></span><span id="ch-left"></span></div>
+      </div>
+      <div class="book-line">
+        <div class="bar thin"><div id="book-fill"></div></div>
+        <div class="times"><span id="book-left"></span><span id="speed"></span></div>
+      </div>
+    </section>
+  </main>
+
+  <main id="read" class="screen">
+    <header class="read-head">
+      <img id="read-cover" alt="">
+      <div>
+        <div id="read-title"></div>
+        <div id="read-chapter"></div>
+      </div>
+      <div id="read-state"></div>
+    </header>
+    <div id="read-text"></div>
+    <footer class="read-foot"><div class="bar thin"><div id="read-fill"></div></div></footer>
+  </main>
+
+  <div class="brand corner"><img src="waves.svg" alt=""><span>fraudible</span></div>
+  <script src="receiver.js"></script>
+</body>
+</html>
