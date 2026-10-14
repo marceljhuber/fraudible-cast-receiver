@@ -46,6 +46,7 @@ function trackOffset() {
 function position() {
   const off = trackOffset();
   if (off !== null && !isNaN(media.currentTime)) return off + media.currentTime;
+  if (state.book && state.book.fallback && !isNaN(media.currentTime)) return media.currentTime;
   if (state.posFromPhone) {
     const p = state.posFromPhone;
     return p.t + (state.playing ? ((Date.now() - p.at) / 1000) * state.rate : 0);
@@ -182,6 +183,18 @@ function startCast() {
   };
   [E.PLAYING, E.PAUSE, E.PLAYER_LOAD_COMPLETE, E.RATE_CHANGE, E.ENDED, E.MEDIA_STATUS].forEach((e) => player.addEventListener(e, sync));
   context.addCustomMessageListener(NS, (event) => onMessage(event.data));
+  // Ask the phone for the book whenever a sender connects, and keep asking while we have none.
+  const hello = (senderId) => { try { context.sendCustomMessage(NS, senderId, { type: 'hello' }); } catch (e) { /* not ready yet */ } };
+  context.addEventListener(cast.framework.system.EventType.SENDER_CONNECTED, (e) => hello(e.senderId));
+  setInterval(() => { if (!state.book && context.getSenders().length) hello(undefined); }, 4000);
+  // Until the phone's details arrive, show what the stream itself says.
+  player.addEventListener(E.PLAYER_LOAD_COMPLETE, () => {
+    if (state.book) return;
+    const info = player.getMediaInformation();
+    const md = (info && info.metadata) || {};
+    state.book = { title: md.title || md.albumName || 'Audiobook', author: md.artist || md.albumArtist || '', duration: (info && info.duration) || media.duration || 0, chapters: [], tracks: [], fallback: true };
+    applyBook();
+  });
   const options = new cast.framework.CastReceiverOptions();
   options.customNamespaces = { [NS]: cast.framework.system.MessageType.JSON };
   options.disableIdleTimeout = false;

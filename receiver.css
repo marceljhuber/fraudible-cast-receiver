@@ -49,7 +49,7 @@ audio { display: none; }
 .hint { color: var(--muted); font-size: 30px; letter-spacing: 0.02em; }
 
 .brand { display: flex; align-items: flex-end; gap: 4px; }
-.brand img { height: 0.62em; margin-bottom: 0.72em; margin-right: -0.9em; }
+.brand img { height: 0.42em; margin-bottom: 0.64em; margin-right: 0.04em; }
 .brand span { font-weight: 600; letter-spacing: -0.02em; }
 .brand.big { font-size: 120px; }
 .brand.corner { position: fixed; right: 64px; bottom: 44px; font-size: 34px; opacity: 0.75; }
