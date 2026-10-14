@@ -119,5 +119,6 @@ body.idle .brand.corner, body.reading .brand.corner { opacity: 0; }
   color: var(--text); font-size: 58px; line-height: 1.32;
   border-left: 8px solid var(--amber); padding-left: 32px; margin-left: -40px;
 }
+.line.status { font-family: "Google Sans", Roboto, sans-serif; font-size: 40px; color: var(--muted); text-align: center; }
 .line.heading { font-family: "Google Sans", Roboto, sans-serif; font-weight: 700; letter-spacing: 0.04em; }
 .read-foot { margin-top: 24px; }

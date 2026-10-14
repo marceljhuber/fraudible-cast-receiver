@@ -16,6 +16,8 @@ const state = {
   rate: 1,
   posFromPhone: null,  // {t, at} fallback when the media element can't be mapped
   chunks: {},
+  readInfo: null,      // {status: 'sending'|'none'|'error', message, sentences}
+  readProgress: null,  // {got, n} while read-along chunks arrive
 };
 
 // ---- formatting -------------------------------------------------------------------------------
@@ -115,6 +117,7 @@ function renderRead(t) {
   if (idx === lastSentence) return;
   lastSentence = idx;
   const box = $('read-text');
+  box.dataset.status = '';
   box.innerHTML = '';
   if (idx < 0) { box.innerHTML = '<div class="line">…</div>'; return; }
   for (let i = Math.max(0, idx - 2); i <= Math.min(state.sentences.length - 1, idx + 3); i++) {
@@ -124,6 +127,27 @@ function renderRead(t) {
     el.textContent = s.text;
     box.appendChild(el);
   }
+}
+
+function readStatusText() {
+  const i = state.readInfo, p = state.readProgress;
+  if (i && i.status === 'none') return 'This book has no read-along text yet.';
+  if (i && i.status === 'error') return `Read-along failed: ${i.message || 'unknown error'}`;
+  if (p) return `Loading the text… ${Math.round((p.got / p.n) * 100)}%`;
+  if (i && i.status === 'sending') return 'Loading the text…';
+  return 'Waiting for the text from your phone…';
+}
+function renderReadStatus() {
+  lastSentence = -2;
+  const text = readStatusText();
+  const box = $('read-text');
+  if (box.dataset.status === text) return;
+  box.dataset.status = text;
+  box.innerHTML = '';
+  const el = document.createElement('div');
+  el.className = 'line status';
+  el.textContent = text;
+  box.appendChild(el);
 }
 
 function tick() {
@@ -152,19 +176,23 @@ function tick() {
   $('speed').textContent = state.rate !== 1 ? `${state.rate.toFixed(2).replace(/0$/, '')}×` : '';
   setText('read-chapter', ch.length > 1 ? `Chapter ${ci + 1} of ${ch.length}  ·  ${c.title}` : '');
 
-  const reading = state.mode === 'read' && state.sentences.length > 0;
+  const reading = state.mode === 'read';
   document.body.classList.toggle('reading', reading);
   document.body.classList.remove('idle');
   const screen = reading ? 'read' : 'now';
   if (shown !== screen) { shown = screen; show(screen); requestAnimationFrame(refit); }
-  if (reading) renderRead(t);
+  if (reading && state.sentences.length) renderRead(t);
+  else if (reading) renderReadStatus();
 }
 
 // ---- messages from the phone ------------------------------------------------------------------
 function onMessage(msg) {
   switch (msg.type) {
+    case 'readinfo':
+      state.readInfo = msg;
+      break;
     case 'book':
-      state.book = msg.book; state.sentences = []; lastSentence = -1;
+      state.book = msg.book; state.sentences = []; state.readInfo = null; state.readProgress = null; lastSentence = -1;
       applyBook();
       break;
     case 'mode':
@@ -179,12 +207,18 @@ function onMessage(msg) {
       const key = `${msg.kind}:${msg.id}`;
       const c = (state.chunks[key] = state.chunks[key] || { parts: [], got: 0 });
       if (c.parts[msg.i] === undefined) { c.parts[msg.i] = msg.data; c.got++; }
+      if (msg.kind === 'read') state.readProgress = { got: c.got, n: msg.n };
       if (c.got === msg.n) {
         const all = c.parts.join('');
         delete state.chunks[key];
         if (msg.kind === 'cover') { state.cover = all; applyCover(); }
         if (msg.kind === 'read') {
-          state.sentences = JSON.parse(all).map((s) => ({ text: s[0], start: s[1], heading: !!s[2] }));
+          try {
+            state.sentences = JSON.parse(all).map((s) => ({ text: s[0], start: s[1], heading: !!s[2] }));
+            state.readProgress = null;
+          } catch (e) {
+            state.readInfo = { status: 'error', message: `Could not read the text (${e.message})` };
+          }
           lastSentence = -1;
         }
       }
