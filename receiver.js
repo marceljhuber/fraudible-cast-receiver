@@ -118,15 +118,35 @@ function renderRead(t) {
   lastSentence = idx;
   const box = $('read-text');
   box.dataset.status = '';
-  box.innerHTML = '';
-  if (idx < 0) { box.innerHTML = '<div class="line">…</div>'; return; }
-  for (let i = Math.max(0, idx - 2); i <= Math.min(state.sentences.length - 1, idx + 3); i++) {
+  if (idx < 0) { fillRead([{ text: '…', cls: 'line current' }]); return; }
+  const lines = [];
+  for (let i = Math.max(0, idx - 4); i <= Math.min(state.sentences.length - 1, idx + 5); i++) {
     const s = state.sentences[i];
-    const el = document.createElement('div');
-    el.className = 'line' + (i < idx ? ' past' : i > idx ? ' next' : ' current') + (s.heading ? ' heading' : '');
-    el.textContent = s.text;
-    box.appendChild(el);
+    lines.push({ text: s.text, cls: 'line' + (i < idx ? ' past' : i > idx ? ' next' : ' current') + (s.heading ? ' heading' : '') });
   }
+  fillRead(lines);
+}
+
+/** Puts [lines] into the read-along box and moves them so the current one sits in the middle of the screen. */
+function fillRead(lines) {
+  const box = $('read-text');
+  const track = document.createElement('div');
+  track.className = 'track';
+  let cur = null;
+  for (const l of lines) {
+    const el = document.createElement('div');
+    el.className = l.cls;
+    el.textContent = l.text;
+    track.appendChild(el);
+    if (l.cls.includes('current')) cur = el;
+  }
+  box.replaceChildren(track);
+  if (!cur) return;
+  const h = box.clientHeight;
+  // Centre the current sentence; one too tall for that starts near the top so its end stays on screen.
+  let y = h / 2 - (cur.offsetTop + cur.offsetHeight / 2);
+  if (cur.offsetHeight > h * 0.8) y = h * 0.08 - cur.offsetTop;
+  track.style.transform = `translateY(${Math.round(y)}px)`;
 }
 
 function readStatusText() {
@@ -143,11 +163,7 @@ function renderReadStatus() {
   const box = $('read-text');
   if (box.dataset.status === text) return;
   box.dataset.status = text;
-  box.innerHTML = '';
-  const el = document.createElement('div');
-  el.className = 'line status';
-  el.textContent = text;
-  box.appendChild(el);
+  fillRead([{ text, cls: 'line status current' }]);
 }
 
 function tick() {
