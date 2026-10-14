@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="receiver.css">
   <script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
 </head>
-<body>
+<body class="idle">
   <!-- Audio is played by the Cast framework through this element; it stays invisible. -->
   <audio id="media"></audio>
 
@@ -22,15 +22,15 @@
     <div class="art-wrap"><img id="cover" alt=""></div>
     <section class="info">
       <div class="eyebrow"><span id="state-dot"></span><span id="state-text">Now playing</span></div>
-      <h1 id="title"></h1>
-      <p id="byline"></p>
+      <h1 id="title" class="mq"><span></span></h1>
+      <p id="byline" class="mq"><span></span></p>
       <div class="chapter">
         <div id="chapter-label"></div>
-        <div id="chapter-title"></div>
+        <div id="chapter-title" class="mq"><span></span></div>
         <div class="bar"><div id="chapter-fill"></div></div>
         <div class="times"><span id="ch-elapsed"></span><span id="ch-left"></span></div>
       </div>
-      <div class="book-line">
+      <div class="book-line" id="book-line">
         <div class="bar thin"><div id="book-fill"></div></div>
         <div class="times"><span id="book-left"></span><span id="speed"></span></div>
       </div>
@@ -40,9 +40,9 @@
   <main id="read" class="screen">
     <header class="read-head">
       <img id="read-cover" alt="">
-      <div>
-        <div id="read-title"></div>
-        <div id="read-chapter"></div>
+      <div class="read-head-text">
+        <div id="read-title" class="mq"><span></span></div>
+        <div id="read-chapter" class="mq"><span></span></div>
       </div>
       <div id="read-state"></div>
     </header>

@@ -54,6 +54,26 @@ function position() {
   return 0;
 }
 
+// ---- text that scrolls when it does not fit ------------------------------------------------------
+function setText(id, text) {
+  const box = $(id), span = box.querySelector('span') || box;
+  if (span.textContent === text) return;
+  span.textContent = text;
+  fit(box);
+}
+function fit(box) {
+  if (!box.classList.contains('mq')) return;
+  const span = box.querySelector('span');
+  box.classList.remove('scroll');
+  const over = span.scrollWidth - box.clientWidth;
+  if (over > 4) {
+    box.style.setProperty('--mq-shift', `${-(over + 48)}px`);
+    box.style.setProperty('--mq-dur', `${Math.max(6, (over + 48) / 45)}s`);
+    box.classList.add('scroll');
+  }
+}
+function refit() { document.querySelectorAll('.mq').forEach(fit); }
+
 // ---- rendering --------------------------------------------------------------------------------
 function show(id) {
   for (const s of document.querySelectorAll('.screen')) s.classList.toggle('visible', s.id === id);
@@ -64,9 +84,9 @@ function applyBook() {
   if (!b) return;
   const root = document.documentElement.style;
   if (b.tint) { root.setProperty('--tint', b.tint[0]); root.setProperty('--tint2', b.tint[1] || b.tint[0]); }
-  $('title').textContent = b.title;
-  $('byline').textContent = [b.author && `by ${b.author}`, b.narrator && `narrated by ${b.narrator}`].filter(Boolean).join('  ·  ');
-  $('read-title').textContent = b.title;
+  setText('title', b.title || '');
+  setText('byline', [b.author && `by ${b.author}`, b.narrator && `narrated by ${b.narrator}`].filter(Boolean).join('  ·  '));
+  setText('read-title', b.title || '');
 }
 
 function applyCover() {
@@ -77,6 +97,7 @@ function applyCover() {
 }
 
 let lastSentence = -1;
+let shown = 'idle';
 function sentenceIndexAt(t) {
   const s = state.sentences;
   let lo = 0, hi = s.length - 1, ans = -1;
@@ -107,7 +128,7 @@ function renderRead(t) {
 
 function tick() {
   const b = state.book;
-  if (!b) { show('idle'); return; }
+  if (!b) { document.body.classList.add('idle'); if (shown !== 'idle') { shown = 'idle'; show('idle'); } return; }
   const t = position();
   document.body.classList.toggle('paused', !state.playing);
   $('state-text').textContent = state.playing ? 'Now playing' : 'Paused';
@@ -119,19 +140,23 @@ function tick() {
   const c = ci >= 0 ? ch[ci] : { title: '', start: 0, end: b.duration };
   const cLen = Math.max(1, c.end - c.start), cPos = Math.min(cLen, Math.max(0, t - c.start));
   $('chapter-label').textContent = ch.length > 1 ? `Chapter ${ci + 1} of ${ch.length}` : 'Progress';
-  $('chapter-title').textContent = c.title || b.title;
+  setText('chapter-title', c.title || b.title || '');
   $('chapter-fill').style.width = `${(cPos / cLen) * 100}%`;
   $('ch-elapsed').textContent = clock(cPos);
   $('ch-left').textContent = `-${clock(cLen - cPos)}`;
   const frac = b.duration ? Math.min(1, t / b.duration) : 0;
   $('book-fill').style.width = `${frac * 100}%`;
   $('read-fill').style.width = `${frac * 100}%`;
-  $('book-left').textContent = `${hm(b.duration - t)} left in book  ·  ${Math.round(frac * 100)}%`;
+  $('book-line').style.visibility = b.duration ? 'visible' : 'hidden';
+  $('book-left').textContent = `${hm(b.duration - t)} left  ·  ${Math.round(frac * 100)}% of the book`;
   $('speed').textContent = state.rate !== 1 ? `${state.rate.toFixed(2).replace(/0$/, '')}×` : '';
-  $('read-chapter').textContent = ch.length > 1 ? `Chapter ${ci + 1} of ${ch.length}  ·  ${c.title}` : '';
+  setText('read-chapter', ch.length > 1 ? `Chapter ${ci + 1} of ${ch.length}  ·  ${c.title}` : '');
 
   const reading = state.mode === 'read' && state.sentences.length > 0;
-  show(reading ? 'read' : 'now');
+  document.body.classList.toggle('reading', reading);
+  document.body.classList.remove('idle');
+  const screen = reading ? 'read' : 'now';
+  if (shown !== screen) { shown = screen; show(screen); requestAnimationFrame(refit); }
   if (reading) renderRead(t);
 }
 
@@ -209,8 +234,8 @@ function startDemo() {
   state.posFromPhone = { t: 754, at: Date.now() };
   const words = 'The cat could jump into my arms. It was something I had trained her to do. I could shake a bag of cat treats, and she would jump right up there. I cursed myself for not bringing cat treats out with me. The window on the first-floor apartment slid open. "What in god\'s name is going on out here?" Mrs. Parsons called, sticking her head out the window.'.split(/(?<=[.!?"])\s+/);
   onMessage({ type: 'book', book: {
-    title: 'Dungeon Crawler Carl', author: 'Matt Dinniman', narrator: 'Jeff Hays', duration: 48660,
-    chapters: [{ title: 'Opening Credits', start: 0, end: 60 }, { title: 'Chapter 1', start: 60, end: 1400 }, { title: 'Chapter 2', start: 1400, end: 2600 }],
+    title: new URLSearchParams(location.search).get('title') || 'Dungeon Crawler Carl', author: 'Matt Dinniman', narrator: 'Jeff Hays', duration: 48660,
+    chapters: [{ title: 'Opening Credits', start: 0, end: 60 }, { title: new URLSearchParams(location.search).get('chapter') || 'Chapter 1', start: 60, end: 1400 }, { title: 'Chapter 2', start: 1400, end: 2600 }],
     tracks: [], tint: ['#6b5a12', '#2a1f08'],
   } });
   const sentences = words.map((w, i) => [w, 700 + i * 9, 0]);
@@ -221,6 +246,8 @@ function startDemo() {
   setInterval(() => { state.posFromPhone = { t: (Date.now() - start) / 1000, at: Date.now() }; tick(); }, 250);
 }
 
+window.addEventListener('resize', refit);
+if (document.fonts) document.fonts.ready.then(refit);
 if (location.search.includes('demo')) startDemo();
 else if (window.cast && cast.framework) startCast();
 setInterval(tick, 250);
